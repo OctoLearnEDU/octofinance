@@ -6565,9 +6565,12 @@ function autoPass() {
   if (!UI.cardTurn || UI.sheetFn || !G || G.over) return;
   UI.cardTurn = 0;
   if (G.mode === 'online') {
-    if (G.turn !== G.me || !G.order) return;
-    const N = G.players.find(p => p.id === NET.nextInOrder()); if (!N || N.id === G.me) return;
-    NET.passTurn().then(ok => { if (ok) { toast(`Ээлж: ${N.name}`); render(); } });
+    if (!G.order || !G.order.includes(G.me)) return;
+    // acting claims the turn (user 2026-11-12: «үйлдэл хийгээд байхад ээлж өөрчлөгдөхгүй»): someone forgot «Ээлжээ дуусгах», the next player
+    // drew his card anyway → the turn moves on from the one who acted, not from the stale holder
+    const was = G.turn; if (G.turn !== G.me) G.turn = G.me;
+    const N = G.players.find(p => p.id === NET.nextInOrder()); if (!N || N.id === G.me) { G.turn = was; return; }
+    NET.passTurn(true).then(ok => { if (ok) { toast(`Ээлж: ${N.name}`); render(); } else { G.turn = was; render(); } });
   } else if (G.players.filter(p => !p.out).length > 1) { ACT.endTurn(); toast(`Ээлж: ${me().name}`); }
 }
 { const cs1 = closeSheet; closeSheet = function () { const r = cs1.apply(this, arguments); if (UI.cardTurn) setTimeout(autoPass, 450); return r; }; }
