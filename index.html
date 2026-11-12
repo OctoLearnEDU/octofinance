@@ -4972,7 +4972,7 @@ function vBoard() {
   if (v3 && P.bk) alerts.push(`<div class="alert">${ic('warning-circle')}<span><b>Найдваргүй зээлдэгч</b>Цалин −${BK.salCut}% · банкны зээл ${Math.round(BK.bankX * 100)}% · яаралтай зээл ${fmtS(Math.round(salaryOf(P) * BK.emX))} хүртэл</span></div>`);
   if (lv === 1 && !P.v3) alerts.push(`<button class="alert neg edu-tap" data-a="newGame">${ic('warning-circle')}<span><b>Хуучин дүрмийн тоглоом</b>Шинэ дүрмээр тоглохын тулд Шинэ тоглоом эхлүүлнэ</span><em>›</em></button>`);
   if (false && v3 && !P.start && canAct(P)) alerts.push(`<button class="alert edu-tap" data-a="deckGo" data-k="AE">${ic('identification-card')}<span><b>Амьдралын эхлэл</b>Картынхаа дугаарыг оруулна</span><em>№</em></button>`);
-  if (P.edu > 0) alerts.push(`<button class="alert ok edu-tap" data-a="eduUse">${ic('dice-5')}<span><b>${v3 ? '2 шоогоор явна' : '3 шоогоор хаяна'} · ${P.edu} ээлж</b>Хаясны дараа дарна</span><em>−1</em></button>`);
+  if (P.edu > 0) alerts.push(`<div class="alert ok">${ic('dice-5')}<span><b>${v3 ? '2 шоогоор явна' : '3 шоогоор хаяна'} · ${P.edu} ээлж</b>Ээлж бүр дуусахад автоматаар хасагдана</span></div>`);
   if (v3) for (const a of P.assets.filter(a => a.kind === 'bond' && a.left <= 0)) alerts.push(`<button class="alert edu-tap" data-a="sellOne" data-id="${a.id}">${ic('bank')}<span><b>${esc(a.name)}</b>Хугацаа дууслаа · Сунгах уу?</span><em>›</em></button>`);
   if (P.skip > 0) alerts.push(`<div class="alert">${ic('clock')}<span><b>${P.skip} ээлж өнжинө</b>Ажлаас халагдсан тул шоо хаяхгүй.</span></div>`);
   if (lv === 1 && P.streak >= 2) alerts.push(`<div class="alert ok">${ic('trophy')}<span><b>${v3 ? 'Түвшин 1 дууслаа!' : 'Санхүүгийн эрх чөлөө!'}</b>${v3 ? 'Идэвхгүй орлого зардлын 2 дахинд хүрлээ.' : 'Эрх чөлөөний 3 нөхцөлийг 2 цалингийн өдөр дараалан хангалаа.'}<span class="row"><button class="minibtn go" data-a="levelUp">${G.settings.endAtL1 ? 'Ялалтаа баталгаажуулах' : 'Түвшин 2 руу гарах'}</button></span></span></div>`);
@@ -5615,7 +5615,7 @@ function fEdu() {
   ${afterBox(P, -amt, 0, undefined, true)}${shortfall(P, amt, true)}
   <div class="cta"><button class="btn" data-a="close">Үгүй</button>${payBtn(P, amt, 'eduOk', fmt(amt) + ' төлөх', true)}</div>`;
 }
-ACT.eduOk = () => { const P = me(); const amt = eduCost(P); snap('Боловсрол'); pay(G, P, amt, 'Боловсролоо дээшлүүлэх', null, 'pay'); P.edu = 3; P.flags.training = true; save(); closeSheet(); };
+ACT.eduOk = () => { const P = me(); const amt = eduCost(P); snap('Боловсрол'); pay(G, P, amt, 'Боловсролоо дээшлүүлэх', null, 'pay'); P.edu = 3; P.eduNew = 1; P.flags.training = true; save(); closeSheet(); };   // eduNew: the Боловсрол turn itself does not count
 /* each square a player resolves uses up one boosted turn */
 function eduTick(P) { if (P && P.edu > 0) P.edu -= 1; }
 /* the player taps the lobby banner after each boosted turn: one tap = one turn used (user 2026-10-19) */
@@ -9509,6 +9509,13 @@ function autoPass() {
 { const cs1 = closeSheet; closeSheet = function () { const r = cs1.apply(this, arguments); if (UI.cardTurn) setTimeout(autoPass, 450); return r; }; }
 /* online: taking Орлого / Жилийн орлого also ends the turn (user 2026-11-12: «ямар нэг үйлдэл хийх үед автоматаар ээлжээ дуусгадаг»).
    If the player only passed over Орлого and then lands on a card, entering that card claims the turn back (autoPass). One phone keeps the button. */
+/* a player's own turn ended → one boosted Боловсрол turn is used up (user 2026-11-12: «тоглогч өөрөө дарж байж хасаад байна» — automatic now) */
+function turnDone8(P) {
+  if (!P || !(P.edu > 0)) { if (P) delete P.eduNew; return; }
+  if (P.eduNew) { delete P.eduNew; return; }
+  P.edu -= 1; log(G, P, P.edu ? `Боловсрол · 2 шоогоор ${P.edu} ээлж үлдлээ` : 'Боловсролын 2 шоо дууслаа', 0, null, 'skip');
+  if (G.mode !== 'online' || P.id === G.me) toast(P.edu ? `2 шоо · ${P.edu} ээлж үлдлээ` : 'Боловсролын 2 шоо дууслаа');
+}
 { const pn0 = ACT.payNow; ACT.payNow = function () { if (G && G.mode === 'online') UI.cardTurn = 1; return pn0.apply(this, arguments); }; }
 { const p70 = ACT.pay7Ok; ACT.pay7Ok = function () { if (G && G.mode === 'online') UI.cardTurn = 1; return p70.apply(this, arguments); }; }
 
@@ -9551,6 +9558,11 @@ fWin = function () {
   <div class="cta">${wo && !(P && P.won) ? `<button class="btn go" data-a="close">Тоглоомоо үргэлжлүүлэх</button>` : `<button class="btn" data-a="close">Тоглоомоо харах</button><button class="btn go" data-a="home">Нүүр хуудас</button>`}</div>`;
 };
 { const cs2 = closeSheet; closeSheet = function () { if (UI.sheetFn === fWin) UI.winOther = null; return cs2.apply(this, arguments); }; }
+{ const lh2 = l1Handle; l1Handle = function (e, name) {
+  if (e.t !== 'skip1') return lh2(e, name);
+  if (e.to === G.me) { const P = me(); if (P && P.skip > 0 && !(P.sk1 || []).includes(e.id)) { P.sk1 = (P.sk1 || []).concat(e.id).slice(-12); P.skip -= 1; log(G, P, `Ээлж өнжлөө · ${P.skip} үлдсэн`, 0, null, 'skip'); save(); toast(`Ээлж өнжлөө · ${P.skip} үлдсэн`); } }
+  return true;
+}; }
 { const lh1 = l1Handle; l1Handle = function (e, name) {
   if (e.t !== 'win') return lh1(e, name);
   /* everyone sees the finish screen of each player who finishes, with the place (user 2026-11-09: «2рт 3рт ... хүн тус бүрт гарч ирнэ») */
@@ -9572,6 +9584,7 @@ ACT.endTurn = () => {
   save(); render(); window.scrollTo(0, 0);
 };
 nextPlayer = function () { const n = G.players.length; for (let k = 1; k <= n; k++) { const p = G.players[(G.cur + k) % n]; if (!p.out && !p.won) return p; } return me(); };
+{ const et0 = ACT.endTurn; ACT.endTurn = function () { const p = G && G.players[G.cur]; if (p && !p.out && !p.won) turnDone8(p); return et0.apply(this, arguments); }; }
 
 /* ---------- squares also hand the turn on once done (user 2026-11-09: «Боловсрол дээр буухад ... эд нарыг ч бас»).
    Орлого / Жилийн орлого are left out: they are also taken when passing over, before the square the player lands on. ---------- */
@@ -9585,7 +9598,7 @@ function onMyTurn8() {
   setTimeout(() => { if (G.turn !== G.me || !(P.skip > 0)) return;
     P.skip -= 1; log(G, P, `Ээлж өнжлөө · ${P.skip} үлдсэн`, 0, null, 'skip'); save();
     toast(`Ээлж өнжлөө · ${P.skip} үлдсэн`); NET.emit({ t: 'note', txt: `Ээлж өнжлөө · ${P.skip} үлдсэн` });
-    NET.passTurn(true).then(() => render()); }, 900);
+    UI.skipPass = 1; NET.passTurn(true).then(() => { UI.skipPass = 0; render(); }, () => { UI.skipPass = 0; }); }, 900);
 }
 { const tb0 = turnBar; turnBar = function (dark) {
   let h = tb0(dark); if (!h) return h;
@@ -9637,7 +9650,7 @@ const NET = (() => {
       return true;
     } catch (e) { toast(errMsg(e, 'Өрөө нээж чадсангүй: ')); return null; } finally { busy = false; }
   }
-  let healT = 0;
+  let healT = 0, skipT = 0, passing = 0;
   /* join request while a game runs (user 2026-11-12): rooms/<code>/reqs/<pid> {pid, name, prof, at, st: 'wait' | 'ok' | 'no'} */
   function askIn(code, P) {
     return new Promise(async res => {
@@ -9737,7 +9750,9 @@ const NET = (() => {
       if (r.order) G.order = r.order;
       G.hostOut = !!r.hostOut;   // the admin may stay out of the turns (user 2026-11-11)
       if (r.started === true && !G.started) { G.started = true; store.set('of2.g.' + G.id, G); if (UI.view === 'lobby') { UI.view = 'game'; UI.tab = 'board'; toast('Админ тоглоомыг эхлүүллээ'); try { buzz(60); } catch (e) { } render(); window.scrollTo(0, 0); } }
-      if (r.turn && r.turn !== G.turn) { const was = G.turn; G.turn = r.turn; store.set('of2.g.' + G.id, G);
+      if (r.turn && r.turn !== G.turn) { const was = G.turn; G.turn = r.turn;
+        if (was === G.me && r.turn !== G.me && !passing && typeof turnDone8 === 'function') { const P0 = G.players.find(p => p.id === G.me); if (P0 && !(P0.skip > 0)) { turnDone8(P0); push(); } }
+        store.set('of2.g.' + G.id, G);
         if (was && r.turn === G.me) { const P0 = G.players.find(p => p.id === G.me); if (P0 && P0.skip > 0) toast('Ээлж өнжинө'); else { toast('Таны ээлж'); try { buzz(60); } catch (e) { } } if (typeof onMyTurn8 === 'function') onMyTurn8(); }
         if (!UI.sheetFn) render(); }
       if (G.kicked.includes(G.me)) return kickedOut();
@@ -9746,6 +9761,10 @@ const NET = (() => {
         if (r.order && P0 && !P0.out && !P0.won && !r.order.includes(G.me) && !(r.hostOut && G.me === r.host) && !healT) {
           healT = setTimeout(async () => { healT = 0; try { const cur = (await db.doc(`rooms/${code}`).get()).data() || {}; const o = (cur.order || []).slice();
             if (!o.includes(G.me) && !(cur.hostOut && G.me === cur.host) && !(cur.kicked || []).includes(G.me)) { o.push(G.me); await db.doc(`rooms/${code}`).update({ order: o, turn: cur.turn && o.includes(cur.turn) ? cur.turn : o[0] }); } } catch (e) { } }, 600 + Math.random() * 900); } }
+      // the turn reached a player who sits out but his phone does not move it on (asleep, closed) → after a few seconds the admin's phone does it for him (2026-11-12)
+      if (r.turn && G.host === G.me && r.turn !== G.me) { const S = G.players.find(p => p.id === r.turn); if (S && S.skip > 0) { const t0 = r.turn; clearTimeout(skipT); skipT = setTimeout(async () => {
+        const S2 = G.players.find(p => p.id === t0); if (G.turn !== t0 || !S2 || !(S2.skip > 0)) return;
+        emit({ t: 'skip1', to: t0, txt: `${S2.name} ээлж өнжлөө` }); UI.skipPass = 1; try { await passTurn(true); } finally { UI.skipPass = 0; } if (!UI.sheetFn) render(); }, 6000); } }
       // the turn sits on someone who is no longer in the room → the admin moves it on
       if (r.turn && G.host === G.me && r.order && !G.players.some(p => p.id === r.turn) && !healT) { healT = setTimeout(async () => { healT = 0; try { await passTurn(true); } catch (e) { } }, 1200); }
       const n0 = G.players.length; G.players = G.players.filter(p => !G.kicked.includes(p.id));
@@ -9763,7 +9782,7 @@ const NET = (() => {
         for (const e of (x.ev || []).slice().reverse()) {
           if (seen.has(e.id)) continue;
           seen.add(e.id);
-          if (e.at < joinedAt - 120000) continue;   // old news from before we arrived
+          if (e.at < joinedAt - 120000 && !(e.t === 'skip1' && e.to === G.me)) continue;   // old news from before we arrived (a sit-out done for me while away still counts)
           handle(e, x.name); changed = true;
         }
       });
@@ -9855,8 +9874,11 @@ const NET = (() => {
     if (!db || !G || G.mode !== 'online') return false;
     if (!force && G.turn !== G.me && G.host !== G.me) return false;
     const next = nextInOrder(); if (!next) return false;
-    try { await db.doc(`rooms/${G.room}`).update({ turn: next }); G.turn = next; store.set('of2.g.' + G.id, G); return true; }
-    catch (e) { toast(errMsg(e, 'Ээлж шилжүүлж чадсангүй: ')); return false; }
+    const was = G.turn; passing = 1;
+    try { await db.doc(`rooms/${G.room}`).update({ turn: next }); G.turn = next; passing = 0;
+      if (was === G.me && !UI.skipPass && typeof turnDone8 === 'function') { turnDone8(G.players.find(p => p.id === G.me)); push(); }
+      store.set('of2.g.' + G.id, G); return true; }
+    catch (e) { passing = 0; toast(errMsg(e, 'Ээлж шилжүүлж чадсангүй: ')); return false; }
   }
   // check pending incoming cards whenever a sheet closes
   const _close = closeSheet;
