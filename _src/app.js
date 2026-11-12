@@ -6457,8 +6457,8 @@ ACT.csOpen = () => { if (!canAct(me())) return toast('Таны ээлж биш �
 function fCs8() {
   const P = me(), x = FS.cs, c = csCard(x), os = others1(P), ok = csOk(c);
   if (x.sent) { const B = PL1(x.to);
-    return `${head('Карт зарах')}<div class="cs8-wait">${ic2('r:hourglass-medium')}<b>${esc(B ? B.name : '')}-д санал илгээлээ</b><small>${esc(c.title)} · ${fmt(x.amt)}</small><p>Тэр картаа нээж авбал мөнгө танд орно.</p></div>
-    <div class="cta"><button class="btn go" data-a="close">Хаах</button></div>`; }
+    return `${head('Карт зарах')}<div class="cs8-wait">${ic2('r:hourglass-medium')}<b>${esc(B ? B.name : '')}-д санал илгээлээ</b><small>${esc(c.title)} · ${fmt(x.amt)}</small><p>Тэр картаа нээж авбал мөнгө танд орно. Санал очоогүй бол дахин илгээнэ үү.</p></div>
+    <div class="cta"><button class="btn" data-a="csAgain8">Дахин илгээх</button><button class="btn go" data-a="close">Хаах</button></div>`; }
   return `${head('Карт зарах')}
   <p class="cs8-p">Сугалсан картаа өөр тоглогчид зарна. Үнээ тохиролцоод доор оруулна уу.</p>
   <div class="cs8-f"><label>Карт</label>
@@ -6485,12 +6485,20 @@ function fCsIn() {
   return `${head('Карт зарах санал')}<div class="cs8-wait">${ic2('r:handshake')}<b>${esc(FS.from)} картаа зарж байна</b><small>${esc(c.title)} · ${DECKS[c.deck].n} № ${cardNo(c)}</small><p>Тохиролцсон үнэ <b>${fmt(e.amt || 0)}</b>. Картаа нээгээд авах эсэхээ шийднэ.</p></div>
   <div class="cta"><button class="btn" data-a="csNo8">Татгалзах</button><button class="btn go" data-a="csYes8">Карт нээх</button></div>`;
 }
+function csShow8(id) { const q = UI.csq || []; const i = id ? q.findIndex(x => x.e.id === id) : 0; if (i < 0 || !q[i]) return;
+  if (!id && UI.sheetFn) return; const x = q.splice(i, 1)[0]; FS = { csin: x.e, from: x.name }; openSheet(fCsIn, { modal: true }); }
+{ const cs3 = closeSheet; closeSheet = function () { const r = cs3.apply(this, arguments); if ((UI.csq || []).length) setTimeout(() => { if (!UI.sheetFn) csShow8(); }, 700); return r; }; }
+ACT.csAgain8 = () => { const P = me(), x = FS.cs, c = csCard(x); if (!c || !x.to) return;
+  NET.emit({ t: 'csell', to: x.to, card: c.id, amt: x.amt, txt: `${c.title} картаа ${x.amt ? fmtS(x.amt) + '-өөр ' : ''}зарах санал` }); toast('Саналаа дахин илгээлээ'); };
 ACT.csYes8 = () => { const e = FS.csin; NET.emit({ t: 'csellok', to: e.by, txt: `${CARD[e.card].title} картыг нээлээ` }); startCard(e.card, { offerFrom: e.by, offerAmt: e.amt || 0, offerLock: true }); };
 ACT.csNo8 = () => { const e = FS.csin; NET.emit({ t: 'csellno', to: e.by, txt: `${CARD[e.card].title} · авахаас татгалзлаа` }); closeSheet(); };
 { const lh0 = l1Handle; l1Handle = function (e, name) {
   if (!['csell', 'csellok', 'csellno'].includes(e.t)) return lh0(e, name);
   if (e.to !== G.me) return true;
-  if (e.t === 'csell') { e.by = e.by || e.from; const go = () => { FS = { csin: e, from: name }; openSheet(fCsIn, { modal: true }); }; notify(e.by, name, e.txt, 'cardsale', go); if (!UI.sheetFn) setTimeout(go, 0); }
+  if (e.t === 'csell') { e.by = e.by || e.from;
+    // the offer waits until the buyer's open window closes (user 2026-11-12: «Карт зарах хүсэлт нөгөө хүндээ очихгүй байна» — it used to be only an 8-second notification)
+    UI.csq = (UI.csq || []).filter(q => !(q.e.by === e.by && q.e.card === e.card)); UI.csq.push({ e, name });
+    notify(e.by, name, e.txt, 'cardsale', () => csShow8(e.id)); if (!UI.sheetFn) setTimeout(() => csShow8(), 0); }
   else notify(e.by, name, e.txt, e.t === 'csellno' ? 'cardx' : 'buy');
   return true;
 }; }
