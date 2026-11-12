@@ -2823,6 +2823,13 @@ button.h3-amt.h3-pr:focus-visible{outline:2px solid #F7AA21;outline-offset:3px;b
 .hs.lobby .lh,.hs.lobby .hs-bar b{color:#fff}
 .hs.lobby .sub{color:rgba(255,255,255,.72)}
 .ntf{touch-action:none;user-select:none;-webkit-user-select:none}
+/* room creator's role: play or admin only (user 2026-11-12) */
+.role8-l{display:grid;gap:10px;margin:14px 0 6px;text-align:left}
+.role8-o{display:block;width:100%;padding:14px 16px;border:1.5px solid var(--line);border-radius:16px;background:#fff;font:inherit;color:#082567;text-align:left;cursor:pointer}
+.role8-o b{display:block;font-size:15.5px;font-weight:800}
+.role8-o small{display:block;margin-top:3px;font-size:12.5px;line-height:1.4;color:var(--mute)}
+.role8-o:active,.role8-o:focus-visible{border-color:#F7AA21;background:#FFF7E8;outline:none}
+.role8 .role8-n{font-size:12px;color:var(--mute);margin-top:6px}
 </style>
 <div id="app"><main id="view"></main></div>
 <nav id="nav" class="nav" hidden></nav>
@@ -4825,7 +4832,20 @@ ACT.startGame = async d => {
   G = g; OF._G = G; UI.view = mode === 'online' ? 'lobby' : 'game'; UI.tab = 'board'; UI.undo = [];
   log(G, null, 'Тоглоом эхэллээ', 0, null, 'start');
   save(); render(); window.scrollTo(0, 0);
+  if (mode === 'online') setTimeout(() => openSheet(fRole8, { modal: true }), 250);   // ask the admin: play too, or only run the room (user 2026-11-12)
 };
+/* the room's creator chooses: play like everyone else, or only be the admin (user 2026-11-12: «Админ хийх үү, тоглолтонд орох уу») */
+function fRole8() {
+  return `<div class="ask8 role8"><span class="ask8-i">${ic2('r:users-three')}</span>
+  <h3>Та энэ өрөөнд юу хийх вэ?</h3><p>Өрөө нээсэн хүн админ болно. Тоглоомд орох эсэхээ сонгоно уу.</p>
+  <div class="role8-l">
+    <button class="role8-o" data-a="role8" data-v="play"><b>Тоглоомд орно</b><small>Бусадтай адил ээлжээр тоглоно. Админ эрх хэвээр.</small></button>
+    <button class="role8-o" data-a="role8" data-v="admin"><b>Зөвхөн админ</b><small>Ээлжинд орохгүй. Тоглоомыг эхлүүлж, ээлж, тоглогчдыг удирдана.</small></button>
+  </div><p class="role8-n">Дараа нь лобби эсвэл «Ээлжийн дараалал» дээрээс өөрчилж болно.</p></div>`;
+}
+fRole8._zp = 1;
+ACT.role8 = async d => { const out = d.v === 'admin'; closeSheet();
+  if (!!G.hostOut !== out) { if (await NET.setOrder((G.order || [G.me]).slice(), out)) { toast(out ? 'Та зөвхөн админ байна' : 'Та тоглоомд орно'); render(); } } else toast(out ? 'Та зөвхөн админ байна' : 'Та тоглоомд орно'); };
 ACT.joinGo = async () => {
   const S = UI.setup;
   if (!S.sel) { S.err = 'Эхлээд мэргэжлээ сонгоно уу'; return render(); }
@@ -9743,8 +9763,8 @@ const NET = (() => {
     if (!db || !G || G.mode !== 'online' || G.host !== G.me) return false;
     hostOut = hostOut === undefined ? !!G.hostOut : !!hostOut;
     if (hostOut) order = order.filter(id => id !== G.host); else if (!order.includes(G.host)) order = [G.host].concat(order);
-    if (!order.length) { toast('Ээлжинд дор хаяж 1 тоглогч байх ёстой'); return false; }
-    const turn = G.turn && order.includes(G.turn) ? G.turn : order[0];
+    if (!order.length && G.started !== false) { toast('Ээлжинд дор хаяж 1 тоглогч байх ёстой'); return false; }   // before the start an admin-only room may have nobody in the turns yet
+    const turn = G.turn && order.includes(G.turn) ? G.turn : (order[0] || null);
     try { await db.doc(`rooms/${G.room}`).update({ order, turn, hostOut }); G.order = order; G.turn = turn; G.hostOut = hostOut; store.set('of2.g.' + G.id, G); return true; }
     catch (e) { toast(errMsg(e, 'Дараалал хадгалж чадсангүй: ')); return false; }
   }
