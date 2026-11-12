@@ -4761,10 +4761,12 @@ function fPayAsk1() {
     ${f.paydayPassive ? row('r:chart-line-up', '#E5EEFB', '#1F4FB0', 'Идэвхгүй орлого', 'хөрөнгө, хадгаламж', '+' + fmt(f.paydayPassive), 'pos') : ''}
     ${row('r:receipt', '#FCE9E7', '#C2412D', 'Зардал', ex === f.expenses * M ? `${fmtS(f.expenses)} × ${M} сар` : `${M} сарын нийлбэр`, '−' + fmt(ex), 'neg')}
   </div>
+  ${G.players.filter(p => !p.out && !p.won).length > 1 ? `<button class="ps-over" data-a="payOver" aria-pressed="${!!FS.passOver}"><i></i><span><b>Орлогыг дайрч өнгөрсөн</b><small>${FS.passOver ? 'Ээлж үргэлжилнэ — дараа нь буусан нүдээ оруулна' : 'Орлого авсны дараа ээлж автоматаар дуусна'}</small></span></button>` : ''}
   <div class="cta"><button class="btn" data-a="close">Болих</button><button class="btn go" data-a="payNow">Орлого авах</button></div>
   </div>`;
 }
 fPayAsk1._zp = 1;
+ACT.payOver = () => { FS.passOver = !FS.passOver; drawSheet(); };
 v3Act('sqPay', () => { FS = {}; UI.cpNext = null; openSheet(fPayAsk1); });
 const FIRED_SKIP = 2, FIRED_MONTHS = 1;   // fired (dice 1–3): sit out 2 turns (user 2026-11-09) and lose 1 month's salary (user 2026-11-11: «1 сар хэвээр»)
 function fFired1() {
@@ -5364,7 +5366,7 @@ function vHome3(P, f, alerts, act, mon) {
   const spec = Object.keys(SP).filter(t => sqs.some(q => q.type === t)).map(t => { const [icn, n, bg, c] = SP[t];
     return `<button data-a="sqType" data-t="${t}" ${act ? '' : 'disabled'}><span class="ti" style="background:${bg};color:${c}">${ic2(icn)}</span><b>${n}</b></button>`; }).join('');
   const pay = !act ? `<div class="h3-wait"><span class="av" style="background-image:url(${m})"></span><b>${esc(P.name)}-ийн самбар</b></div>`
-    : P.skip > 0 ? `<button class="h3-pay skip" data-a="roll"><span class="ti">${ic2('f:hourglass-medium')}</span><b>Ээлж өнжих · ${P.skip}</b><span class="go">${ic2('b:arrow-right')}</span></button>`
+    : P.skip > 0 ? `<div class="h3-pay skip" role="status"><span class="ti">${ic2('f:hourglass-medium')}</span><b>${P.skip} ээлж өнжинө<small style="display:block;font:600 11px Montserrat,sans-serif;opacity:.75">Ээлж ирэхэд автоматаар хасагдана</small></b></div>`
     : `<button class="h3-pay" data-a="sqType" data-t="PAY"><span class="ti">${ic2('r:coins')}</span><b>Орлого</b><span class="go">${ic2('r:arrow-right')}</span></button>`;
   return `<div class="lobby h3">
   <div class="h3-h"><span class="h3-fp">${(OF.flatp && OF.flatp[P.profId]) || ''}</span><div class="h3-who"><small>${ic2('r:clock-counter-clockwise')}${esc(mon)} · Түвшин 1</small><b>${esc(PROF[P.profId].title)}</b></div>
@@ -6591,8 +6593,8 @@ function turnDone8(P) {
   P.edu -= 1; log(G, P, P.edu ? `Боловсрол · 2 шоогоор ${P.edu} ээлж үлдлээ` : 'Боловсролын 2 шоо дууслаа', 0, null, 'skip');
   if (G.mode !== 'online' || P.id === G.me) toast(P.edu ? `2 шоо · ${P.edu} ээлж үлдлээ` : 'Боловсролын 2 шоо дууслаа');
 }
-{ const pn0 = ACT.payNow; ACT.payNow = function () { if (G && G.mode === 'online') UI.cardTurn = 1; return pn0.apply(this, arguments); }; }
-{ const p70 = ACT.pay7Ok; ACT.pay7Ok = function () { if (G && G.mode === 'online') UI.cardTurn = 1; return p70.apply(this, arguments); }; }
+{ const pn0 = ACT.payNow; ACT.payNow = function () { if (G && !(FS && FS.passOver)) UI.cardTurn = 1; return pn0.apply(this, arguments); }; }   // one phone too (user 2026-11-12: «Орлого дээр дарах үед ээлж солигдохгүй»)
+{ const p70 = ACT.pay7Ok; ACT.pay7Ok = function () { if (G) UI.cardTurn = 1; return p70.apply(this, arguments); }; }
 
 /* ---------- joining a running game needs the admin's yes (user 2026-11-12) ---------- */
 function fJoinWait8() {
