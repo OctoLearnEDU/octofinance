@@ -9507,6 +9507,31 @@ function autoPass() {
   } else if (G.players.filter(p => !p.out).length > 1) { ACT.endTurn(); toast(`Ээлж: ${me().name}`); }
 }
 { const cs1 = closeSheet; closeSheet = function () { const r = cs1.apply(this, arguments); if (UI.cardTurn) setTimeout(autoPass, 450); return r; }; }
+/* online: taking Орлого / Жилийн орлого also ends the turn (user 2026-11-12: «ямар нэг үйлдэл хийх үед автоматаар ээлжээ дуусгадаг»).
+   If the player only passed over Орлого and then lands on a card, entering that card claims the turn back (autoPass). One phone keeps the button. */
+{ const pn0 = ACT.payNow; ACT.payNow = function () { if (G && G.mode === 'online') UI.cardTurn = 1; return pn0.apply(this, arguments); }; }
+{ const p70 = ACT.pay7Ok; ACT.pay7Ok = function () { if (G && G.mode === 'online') UI.cardTurn = 1; return p70.apply(this, arguments); }; }
+
+/* ---------- joining a running game needs the admin's yes (user 2026-11-12) ---------- */
+function fJoinWait8() {
+  const w = UI.jw || {};
+  return `<div class="ask8"><span class="ask8-i">${ic2('r:hourglass-medium')}</span>
+  <h3>Админ зөвшөөрөхийг хүлээж байна</h3><p>Тоглоом эхэлчихсэн байна. Өрөөний админ таныг (${esc(w.name || '')}) оруулахыг зөвшөөрмөгц тоглоом руу орно.</p>
+  <div class="cta"><button class="btn" style="flex:1;width:100%" data-a="jwCancel">Болих</button></div></div>`;
+}
+fJoinWait8._zp = 1;
+ACT.jwCancel = () => { if (UI.jw && UI.jw.cancel) UI.jw.cancel(); else closeSheet(); };
+function reqShow8(pid) { const q = UI.jq || []; const x = pid ? q.find(r => r.pid === pid) : q[0]; if (!x) return; FS = { req: x }; openSheet(fReq8, { modal: true }); }
+function fReq8() {
+  const x = FS.req || {}, pr = PROF[x.prof];
+  return `<div class="ask8"><span class="ask8-i">${ic2('r:users-three')}</span>
+  <h3>${esc(x.name || 'Тоглогч')} тоглоомд нэгдэх гэж байна</h3><p>${pr ? esc(pr.title) + ' · ' : ''}Тоглоом эхэлсэн тул таны зөвшөөрөл хэрэгтэй. Зөвшөөрвөл ээлжийн дарааллын төгсгөлд орно.</p>
+  <div class="cta"><button class="btn" data-a="req8" data-v="no">Татгалзах</button><button class="btn go" data-a="req8" data-v="ok">Зөвшөөрөх</button></div></div>`;
+}
+fReq8._zp = 1;
+ACT.req8 = async d => { const x = FS.req; if (!x) return; const ok = d.v === 'ok'; closeSheet();
+  if (await NET.answerReq(G.room, x.pid, ok)) toast(ok ? `${x.name} нэгдлээ` : `${x.name}-г оруулсангүй`);
+  setTimeout(() => { if (!UI.sheetFn && (UI.jq || []).some(r => r.pid !== x.pid)) { UI.jq = UI.jq.filter(r => r.pid !== x.pid); reqShow8(); } }, 700); };
 
 /* ---------- finishing one by one (user 2026-11-09) ---------- */
 fWin = function () {
@@ -9613,6 +9638,37 @@ const NET = (() => {
     } catch (e) { toast(errMsg(e, 'Өрөө нээж чадсангүй: ')); return null; } finally { busy = false; }
   }
   let healT = 0;
+  /* join request while a game runs (user 2026-11-12): rooms/<code>/reqs/<pid> {pid, name, prof, at, st: 'wait' | 'ok' | 'no'} */
+  function askIn(code, P) {
+    return new Promise(async res => {
+      const ref = db.doc(`rooms/${code}/reqs/${P.id}`); let un = null, fin = false;
+      const end = ok => { if (fin) return; fin = true; try { un && un(); } catch (e) { } UI.jw = null; if (UI.sheetFn === fJoinWait8) closeSheet(); res(ok); };
+      UI.jw = { name: P.name, cancel: async () => { try { await ref.delete(); } catch (e) { } end(false); } };
+      try { await ref.set({ pid: P.id, name: P.name, prof: P.profId, at: Date.now(), st: 'wait' }); }
+      catch (e) { UI.join.err = errMsg(e, 'Хүсэлт илгээж чадсангүй: '); return end(false); }
+      openSheet(fJoinWait8, { modal: true });
+      try { un = ref.onSnapshot(sn => { const x = sn.exists ? sn.data() : null;
+        if (!x) return end(false);
+        if (x.st === 'ok') { try { ref.delete(); } catch (e) { } end(true); }
+        else if (x.st === 'no') { try { ref.delete(); } catch (e) { } UI.join.err = 'Админ таныг оруулахаас татгалзлаа'; toast('Админ татгалзлаа'); end(false); } }, () => {}); }
+      catch (e) { UI.join.err = 'Хүсэлтийг хянаж чадсангүй'; end(false); }
+    });
+  }
+  let reqUn = null; const reqSeen = new Set();
+  function watchReqs(code) {
+    if (reqUn) { try { reqUn(); } catch (e) { } reqUn = null; }
+    if (!G || G.host !== G.me) return;
+    try { reqUn = db.collection(`rooms/${code}/reqs`).onSnapshot(snap => {
+      if (!G || G.room !== code || G.host !== G.me) return;
+      const live = snap.docs.map(d => d.data()).filter(x => x && x.st === 'wait');
+      UI.jq = live;
+      live.forEach(x => { if (reqSeen.has(x.pid)) return; reqSeen.add(x.pid);
+        notify(x.pid, x.name, 'Тоглоомд нэгдэх хүсэлт илгээлээ', 'cardsale', () => reqShow8(x.pid)); buzz([60, 60, 60]); });
+      if (live.length && !UI.sheetFn) reqShow8();
+      if (UI.sheetFn === fReq8 && !live.some(x => x.pid === (FS.req || {}).pid)) closeSheet();
+    }, () => {}); } catch (e) { reqUn = null; }
+  }
+  async function answerReq(code, pid, ok) { try { await db.doc(`rooms/${code}/reqs/${pid}`).update({ st: ok ? 'ok' : 'no' }); return true; } catch (e) { toast(errMsg(e, 'Хариу илгээж чадсангүй: ')); return false; } }
   async function joinRoom(code, name, prof) {
     if (busy) return null;
     if (!await init()) return noDb();
@@ -9623,7 +9679,7 @@ const NET = (() => {
       if (!r.exists) { UI.join.err = `${code} кодтой өрөө олдсонгүй. Кодоо шалгана уу.`; return null; }
       const room = r.data();
       const g = newGame({ mode: 'online', room: code, settings: room.settings });
-      const others = await db.collection(`rooms/${code}/players`).get();
+      let others = await db.collection(`rooms/${code}/players`).get();
       // same name again (new phone, cleared browser) → continue as that player instead of a second copy that never gets the turn (2026-11-12)
       const nm = String(name || '').trim().toLowerCase(), kicked0 = room.kicked || [];
       const old = nm && others.docs.map(d => d.data() || {}).find(x => x.pid && x.state && !kicked0.includes(x.pid) && String(x.name || '').trim().toLowerCase() === nm);
@@ -9638,6 +9694,15 @@ const NET = (() => {
       }
       const P = newPlayer(g, prof, name || PROF[prof].title);
       P.color = COLORS[others.size % COLORS.length];
+      // the game is already running → the room admin must let a new player in (user 2026-11-12: «тоглолтын дундаас … заавал админ зөвшөөрдөг»)
+      if (room.started !== false && room.host) {
+        busy = false;
+        const ok = await askIn(code, P);
+        busy = true;
+        if (!ok) return null;
+        others = await db.collection(`rooms/${code}/players`).get();
+        const r2 = (await db.doc(`rooms/${code}`).get()).data() || room; room.order = r2.order; room.turn = r2.turn; room.kicked = r2.kicked; room.hostOut = r2.hostOut;
+      }
       g.players.push(P); g.me = P.id; g.room = code; g.decks = {}; g.host = room.host || null; g.kicked = room.kicked || [];
       g.order = room.order || null; g.turn = room.turn || null; g.started = room.started !== false; g.hostOut = !!room.hostOut;   // rooms made before 2026-11-11 have no flag: already running
       others.docs.forEach(d => { const x = d.data(); if (x && x.state && !g.kicked.includes(x.pid)) g.players.push(x.state); (x.ev || []).forEach(e => seen.add(e.id)); });
@@ -9659,6 +9724,7 @@ const NET = (() => {
   }
   function subscribe(code, pid) {
     if (unsub) unsub();
+    setTimeout(() => watchReqs(code), 0);
     joinedAt = Date.now() - 1000;
     st = 'Холбогдож байна…';
     if (roomUnsub) roomUnsub();
@@ -9753,7 +9819,7 @@ const NET = (() => {
       catch (err) { st = err.code === 'invalid_argument' ? 'Бичих эрхгүй — хуудсыг Contributor эрхтэй хуваалцуулна уу' : 'Хадгалж чадсангүй'; }
     }, now ? 50 : 400);
   }
-  function leave() { if (unsub) unsub(); if (roomUnsub) roomUnsub(); unsub = null; roomUnsub = null; queue = []; }
+  function leave() { if (unsub) unsub(); if (roomUnsub) roomUnsub(); if (reqUn) { try { reqUn(); } catch (e) { } } unsub = null; roomUnsub = null; reqUn = null; queue = []; }
   function kickedOut() { const id = G && G.id; leave(); if (id) { try { deleteGame(id); } catch (e) { } } ACT.home(); setTimeout(() => toast('Өрөөний эзэн таныг тоглоомоос хаслаа'), 300); }
   async function kick(pid) {   // only the room's host (user 2026-11-07)
     if (!db || !G || G.mode !== 'online' || G.host !== G.me || pid === G.me) return false;
@@ -9795,7 +9861,7 @@ const NET = (() => {
   // check pending incoming cards whenever a sheet closes
   const _close = closeSheet;
   closeSheet = function () { _close(); setTimeout(flush, 200); };
-  return { create, joinRoom, join, emit, push, leave, kick, passTurn, nextInOrder, setOrder, start, isHost: () => !!(G && G.mode === 'online' && G.host === G.me), status: () => st, init, _handle: (e, name) => { handle(e, name); flush(); } };
+  return { create, joinRoom, join, answerReq, emit, push, leave, kick, passTurn, nextInOrder, setOrder, start, isHost: () => !!(G && G.mode === 'online' && G.host === G.me), status: () => st, init, _handle: (e, name) => { handle(e, name); flush(); } };
 })();
 /* boot */
 (function () {
